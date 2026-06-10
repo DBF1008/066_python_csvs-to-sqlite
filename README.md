@@ -180,6 +180,10 @@ Options:
   --just-strings                  Import all columns as text strings by default
                                   (and, if specified, still obey --shape,
                                   --date/datetime, and --datetime-format)
+  -e, --encoding TEXT             Encodings to try when reading CSV files, in
+                                  order. Can be specified multiple times.
+                                  Defaults to utf-8 then latin-1 if not
+                                  specified.
   --version                       Show the version and exit.
   --help                          Show this message and exit.
 

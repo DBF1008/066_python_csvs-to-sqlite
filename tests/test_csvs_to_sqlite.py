@@ -776,3 +776,53 @@ def test_if_cog_needs_to_be_run():
     assert (
         output == readme.read_text()
     ), "Run 'cog -r README.md' to update help in README"
+
+
+def test_encoding_output_in_default():
+    runner = CliRunner()
+    with runner.isolated_filesystem():
+        open("test.csv", "w").write(CSV)
+        result = runner.invoke(cli.cli, ["test.csv", "test.db"])
+        assert result.exit_code == 0
+        assert "test.csv: encoded as utf-8" in result.output
+
+
+def test_encoding_output_latin1():
+    runner = CliRunner()
+    with runner.isolated_filesystem():
+        with open("latin.csv", "wb") as f:
+            f.write("name,city\nalice,M\xfcnchen\n".encode("latin-1"))
+        result = runner.invoke(cli.cli, ["latin.csv", "test.db"])
+        assert result.exit_code == 0
+        assert "latin.csv: encoded as latin-1" in result.output
+        conn = sqlite3.connect("test.db")
+        rows = conn.execute("select city from latin").fetchall()
+        assert rows == [("München",)]
+
+
+def test_custom_encoding_option():
+    runner = CliRunner()
+    with runner.isolated_filesystem():
+        with open("cp.csv", "wb") as f:
+            f.write(b"name,quote\nalice,\x93hello\x94\n")
+        result = runner.invoke(
+            cli.cli, ["cp.csv", "test.db", "-e", "cp1252", "-e", "utf-8"]
+        )
+        assert result.exit_code == 0
+        assert "cp.csv: encoded as cp1252" in result.output
+
+
+def test_encoding_output_directory_batch():
+    runner = CliRunner()
+    with runner.isolated_filesystem():
+        import os
+
+        os.makedirs("data")
+        open("data/a.csv", "w").write(CSV)
+        with open("data/b.csv", "wb") as f:
+            f.write("name,city\nalice,M\xfcnchen\n".encode("latin-1"))
+        result = runner.invoke(cli.cli, ["data", "batch.db"])
+        assert result.exit_code == 0
+        assert "a.csv: encoded as utf-8" in result.output
+        assert "b.csv: encoded as latin-1" in result.output
+        assert "Loaded 2 dataframes" in result.output

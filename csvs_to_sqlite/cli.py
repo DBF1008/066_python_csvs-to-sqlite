@@ -145,6 +145,16 @@ import sqlite3
     is_flag=True,
     help="Import all columns as text strings by default (and, if specified, still obey --shape, --date/datetime, and --datetime-format)",
 )
+@click.option(
+    "--encoding",
+    "-e",
+    multiple=True,
+    help=(
+        "Encodings to try when reading CSV files, in order. "
+        "Can be specified multiple times. "
+        "Defaults to utf-8 then latin-1 if not specified."
+    ),
+)
 @click.version_option()
 def cli(
     paths,
@@ -169,6 +179,7 @@ def cli(
     no_index_fks,
     no_fulltext_fks,
     just_strings,
+    encoding,
 ):
     """
     PATHS: paths to individual .csv files or to directories containing .csvs
@@ -178,6 +189,8 @@ def cli(
     # make plural for more readable code:
     extract_columns = extract_column
     del extract_column
+
+    encodings_to_try = encoding if encoding else ("utf-8", "latin-1")
 
     if extract_columns:
         click.echo("extract_columns={}".format(extract_columns))
@@ -195,8 +208,17 @@ def cli(
     sql_type_overrides = None
     for name, path in csvs.items():
         try:
-            df = load_csv(
-                path, separator, skip_errors, quoting, shape, just_strings=just_strings
+            df, encoding_used = load_csv(
+                path,
+                separator,
+                skip_errors,
+                quoting,
+                shape,
+                encodings_to_try=encodings_to_try,
+                just_strings=just_strings,
+            )
+            click.echo(
+                "  {}: encoded as {}".format(os.path.basename(path), encoding_used)
             )
             df.table_name = table or name
             if filename_column:

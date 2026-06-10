@@ -25,7 +25,7 @@ def load_csv(
     skip_errors,
     quoting,
     shape,
-    encodings_to_try=("utf8", "latin-1"),
+    encodings_to_try=("utf-8", "latin-1"),
     just_strings=False,
 ):
     dtype = str if just_strings is True else None
@@ -35,7 +35,7 @@ def load_csv(
     try:
         for encoding in encodings_to_try:
             try:
-                return pd.read_csv(
+                df = pd.read_csv(
                     filepath,
                     sep=separator,
                     quoting=quoting,
@@ -45,12 +45,18 @@ def load_csv(
                     usecols=usecols,
                     dtype=dtype,
                 )
+                return df, encoding
             except UnicodeDecodeError:
                 continue
             except pd.errors.ParserError as e:
                 raise LoadCsvError(e)
-        # If we get here, we failed
-        raise LoadCsvError("All encodings failed")
+        raise LoadCsvError(
+            "Could not decode with any of: {}".format(
+                ", ".join(encodings_to_try)
+            )
+        )
+    except LoadCsvError:
+        raise
     except Exception as e:
         raise LoadCsvError(e)
 
