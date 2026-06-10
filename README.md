@@ -177,6 +177,12 @@ Options:
   --no-fulltext-fks               Skip adding full-text index on values
                                   extracted using --extract-column (default is
                                   to add them)
+  --include TEXT                  Only import CSV files matching this glob
+                                  pattern when scanning directories (e.g.
+                                  'daily_*.csv', 'subdir/*.csv')
+  --exclude TEXT                  Exclude CSV files matching this glob pattern
+                                  when scanning directories (e.g.
+                                  'archive/*.csv')
   --just-strings                  Import all columns as text strings by default
                                   (and, if specified, still obey --shape,
                                   --date/datetime, and --datetime-format)

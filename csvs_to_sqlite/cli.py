@@ -141,6 +141,16 @@ import sqlite3
     help="Skip adding full-text index on values extracted using --extract-column (default is to add them)",
 )
 @click.option(
+    "--include",
+    multiple=True,
+    help="Only import CSV files matching this glob pattern when scanning directories (e.g. 'daily_*.csv', 'subdir/*.csv')",
+)
+@click.option(
+    "--exclude",
+    multiple=True,
+    help="Exclude CSV files matching this glob pattern when scanning directories (e.g. 'archive/*.csv')",
+)
+@click.option(
     "--just-strings",
     is_flag=True,
     help="Import all columns as text strings by default (and, if specified, still obey --shape, --date/datetime, and --datetime-format)",
@@ -168,6 +178,8 @@ def cli(
     fixed_columns_float,
     no_index_fks,
     no_fulltext_fks,
+    include,
+    exclude,
     just_strings,
 ):
     """
@@ -191,7 +203,7 @@ def cli(
     conn = sqlite3.connect(dbname)
 
     dataframes = []
-    csvs = csvs_from_paths(paths)
+    csvs = csvs_from_paths(paths, include_patterns=include, exclude_patterns=exclude)
     sql_type_overrides = None
     for name, path in csvs.items():
         try:

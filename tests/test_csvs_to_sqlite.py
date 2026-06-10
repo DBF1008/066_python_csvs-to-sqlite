@@ -776,3 +776,88 @@ def test_if_cog_needs_to_be_run():
     assert (
         output == readme.read_text()
     ), "Run 'cog -r README.md' to update help in README"
+
+
+def test_include_pattern():
+    runner = CliRunner()
+    with runner.isolated_filesystem():
+        open("daily_sales.csv", "w").write(CSV)
+        open("daily_returns.csv", "w").write(CSV_MULTI)
+        open("archive.csv", "w").write(CSV)
+        result = runner.invoke(
+            cli.cli, [".", "test.db", "--include", "daily_*.csv"]
+        )
+        assert result.exit_code == 0
+        conn = sqlite3.connect("test.db")
+        tables = [
+            r[0]
+            for r in conn.execute(
+                "select name from sqlite_master where type='table' order by name"
+            ).fetchall()
+        ]
+        assert "./daily_returns" in tables
+        assert "./daily_sales" in tables
+        assert "./archive" not in tables
+
+
+def test_exclude_pattern():
+    runner = CliRunner()
+    with runner.isolated_filesystem():
+        open("daily_sales.csv", "w").write(CSV)
+        open("archive.csv", "w").write(CSV_MULTI)
+        result = runner.invoke(
+            cli.cli, [".", "test.db", "--exclude", "archive*"]
+        )
+        assert result.exit_code == 0
+        conn = sqlite3.connect("test.db")
+        tables = [
+            r[0]
+            for r in conn.execute(
+                "select name from sqlite_master where type='table' order by name"
+            ).fetchall()
+        ]
+        assert "./daily_sales" in tables
+        assert "./archive" not in tables
+
+
+def test_include_exclude_with_filename_column():
+    runner = CliRunner()
+    with runner.isolated_filesystem():
+        open("keep.csv", "w").write(CSV)
+        open("skip.csv", "w").write(CSV_MULTI)
+        result = runner.invoke(
+            cli.cli,
+            [".", "test.db", "--include", "keep.csv", "--filename-column", "source"],
+        )
+        assert result.exit_code == 0
+        conn = sqlite3.connect("test.db")
+        tables = [
+            r[0]
+            for r in conn.execute(
+                "select name from sqlite_master where type='table' order by name"
+            ).fetchall()
+        ]
+        assert len(tables) == 1
+        assert tables[0] == "./keep"
+        sources = conn.execute(
+            'select distinct source from [./keep]'
+        ).fetchall()
+        assert sources == [("./keep",)]
+
+
+def test_include_does_not_affect_single_file():
+    runner = CliRunner()
+    with runner.isolated_filesystem():
+        open("archive.csv", "w").write(CSV)
+        result = runner.invoke(
+            cli.cli, ["archive.csv", "test.db", "--include", "daily_*.csv"]
+        )
+        assert result.exit_code == 0
+        conn = sqlite3.connect("test.db")
+        tables = [
+            r[0]
+            for r in conn.execute(
+                "select name from sqlite_master where type='table'"
+            ).fetchall()
+        ]
+        assert "archive" in tables

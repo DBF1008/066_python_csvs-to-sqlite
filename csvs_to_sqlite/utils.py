@@ -55,7 +55,11 @@ def load_csv(
         raise LoadCsvError(e)
 
 
-def csvs_from_paths(paths):
+def _match_patterns(rel_filepath, patterns):
+    return any(fnmatch.fnmatch(rel_filepath, p) for p in patterns)
+
+
+def csvs_from_paths(paths, include_patterns=None, exclude_patterns=None):
     csvs = {}
 
     def add_item(filepath, full_path=None):
@@ -80,10 +84,20 @@ def csvs_from_paths(paths):
         elif _is_url(path):
             add_item(urlparse(path).path, path)
         elif os.path.isdir(path):
-            # Recursively seek out ALL csvs in directory
             for root, dirnames, filenames in os.walk(path):
                 for filename in fnmatch.filter(filenames, "*.csv"):
                     relpath = os.path.relpath(root, path)
+                    rel_filepath = os.path.join(relpath, filename)
+                    if rel_filepath.startswith("." + os.sep):
+                        rel_filepath = rel_filepath[2:]
+                    if include_patterns and not _match_patterns(
+                        rel_filepath, include_patterns
+                    ):
+                        continue
+                    if exclude_patterns and _match_patterns(
+                        rel_filepath, exclude_patterns
+                    ):
+                        continue
                     namepath = os.path.join(relpath, os.path.splitext(filename)[0])
                     csvs[namepath] = os.path.join(root, filename)
 
