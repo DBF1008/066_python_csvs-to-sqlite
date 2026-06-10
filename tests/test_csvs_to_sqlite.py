@@ -766,6 +766,63 @@ def test_just_strings_with_date_specified():
             assert isinstance(gross, text_type)
 
 
+def test_multi_file_shape_with_filename_and_fixed_columns():
+    runner = CliRunner()
+    with runner.isolated_filesystem():
+        open("test1.csv", "w").write(CSV)
+        open("test2.csv", "w").write(CSV)
+        result = runner.invoke(
+            cli.cli,
+            [
+                "test1.csv",
+                "test2.csv",
+                "multi.db",
+                "--shape",
+                "county:Cty,votes:Vts",
+                "--filename-column",
+                "source",
+                "--fixed-column",
+                "tag",
+                "hello",
+            ],
+        )
+        assert result.exit_code == 0, result.output
+        conn = sqlite3.connect("multi.db")
+        expected_cols = [
+            (0, "Cty", "TEXT", 0, None, 0),
+            (1, "Vts", "INTEGER", 0, None, 0),
+            (2, "source", "TEXT", 0, None, 0),
+            (3, "tag", "TEXT", 0, None, 0),
+        ]
+        assert expected_cols == list(conn.execute("PRAGMA table_info(test1)"))
+        assert expected_cols == list(conn.execute("PRAGMA table_info(test2)"))
+        rows1 = conn.execute("select * from test1 limit 1").fetchall()
+        assert [("Yolo", 41, "test1", "hello")] == rows1
+        rows2 = conn.execute("select * from test2 limit 1").fetchall()
+        assert [("Yolo", 41, "test2", "hello")] == rows2
+
+
+def test_multi_file_extract_columns():
+    runner = CliRunner()
+    with runner.isolated_filesystem():
+        open("test1.csv", "w").write(CSV)
+        open("test2.csv", "w").write(CSV)
+        result = runner.invoke(
+            cli.cli,
+            ["test1.csv", "test2.csv", "multi.db", "-c", "party"],
+        )
+        assert result.exit_code == 0, result.output
+        conn = sqlite3.connect("multi.db")
+        rows1 = conn.execute(
+            'select county, party.value from test1 left join party on test1.party = party.id limit 1'
+        ).fetchall()
+        assert [("Yolo", "LIB")] == rows1
+        rows2 = conn.execute(
+            'select county, party.value from test2 left join party on test2.party = party.id limit 1'
+        ).fetchall()
+        assert [("Yolo", "LIB")] == rows2
+
+
 def test_if_cog_needs_to_be_run():
     _stdout = sys.stdout
     sys.stdout = StringIO()

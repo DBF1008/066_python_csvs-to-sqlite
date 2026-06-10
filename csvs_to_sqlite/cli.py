@@ -192,33 +192,33 @@ def cli(
 
     dataframes = []
     csvs = csvs_from_paths(paths)
-    sql_type_overrides = None
     for name, path in csvs.items():
         try:
             df = load_csv(
                 path, separator, skip_errors, quoting, shape, just_strings=just_strings
             )
             df.table_name = table or name
+            file_shape = shape
             if filename_column:
                 df[filename_column] = name
-                if shape:
-                    shape += ",{}".format(filename_column)
+                if file_shape:
+                    file_shape += ",{}".format(filename_column)
             if fixed_columns:
                 for colname, value in fixed_columns:
                     df[colname] = value
-                    if shape:
-                        shape += ",{}".format(colname)
+                    if file_shape:
+                        file_shape += ",{}".format(colname)
             if fixed_columns_int:
                 for colname, value in fixed_columns_int:
                     df[colname] = value
-                    if shape:
-                        shape += ",{}".format(colname)
+                    if file_shape:
+                        file_shape += ",{}".format(colname)
             if fixed_columns_float:
                 for colname, value in fixed_columns_float:
                     df[colname] = value
-                    if shape:
-                        shape += ",{}".format(colname)
-            sql_type_overrides = apply_shape(df, shape)
+                    if file_shape:
+                        file_shape += ",{}".format(colname)
+            df.attrs["sql_type_overrides"] = apply_shape(df, file_shape)
             apply_dates_and_datetimes(df, date, datetime, datetime_format)
             dataframes.append(df)
         except LoadCsvError as e:
@@ -255,7 +255,7 @@ def cli(
                 df,
                 df.table_name,
                 foreign_keys,
-                sql_type_overrides,
+                df.attrs.get("sql_type_overrides"),
                 primary_keys=primary_key,
                 index_fks=not no_index_fks,
             )
