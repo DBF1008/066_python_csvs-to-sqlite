@@ -766,6 +766,108 @@ def test_just_strings_with_date_specified():
             assert isinstance(gross, text_type)
 
 
+CSV_V1 = """county,precinct,office,party,candidate,votes
+Yolo,100001,President,LIB,Gary Johnson,41
+Yolo,100001,President,PAF,Gloria La Riva,8"""
+
+CSV_V2 = """county,precinct,office,party,candidate,votes
+Yolo,100001,Governor,DEM,Jane Smith,500
+Yolo,100001,Governor,REP,Bob Jones,300"""
+
+
+def test_replace_with_extract_columns_and_fts():
+    """Replacing the main table must also rebuild lookup tables and FTS indexes."""
+    runner = CliRunner()
+    with runner.isolated_filesystem():
+        # --- first import ---
+        open("test.csv", "w").write(CSV_V1)
+        result = runner.invoke(
+            cli.cli,
+            "test.csv test.db --replace-tables -c office -c party -c candidate -f office -f party -f candidate".split(),
+        )
+        assert result.exit_code == 0
+
+        # --- second import with different data ---
+        open("test.csv", "w").write(CSV_V2)
+        result = runner.invoke(
+            cli.cli,
+            "test.csv test.db --replace-tables -c office -c party -c candidate -f office -f party -f candidate".split(),
+        )
+        assert result.exit_code == 0
+
+        conn = sqlite3.connect("test.db")
+
+        # Lookup tables must contain ONLY v2 values
+        assert conn.execute("select value from office order by id").fetchall() == [
+            ("Governor",)
+        ]
+        assert sorted(conn.execute("select value from party").fetchall()) == [
+            ("DEM",),
+            ("REP",),
+        ]
+        assert sorted(conn.execute("select value from candidate").fetchall()) == [
+            ("Bob Jones",),
+            ("Jane Smith",),
+        ]
+
+        # Main-table FTS must not find stale v1 data
+        assert conn.execute(
+            "select rowid from test_fts where test_fts match 'president'"
+        ).fetchall() == []
+        # ... but must find v2 data
+        assert len(conn.execute(
+            "select rowid from test_fts where test_fts match 'governor'"
+        ).fetchall()) == 2
+
+        # Foreign-key joins must still resolve correctly
+        rows = conn.execute("""
+            select county, office.value, party.value, candidate.value, votes
+            from test
+                left join office on test.office = office.id
+                left join party on test.party = party.id
+                left join candidate on test.candidate = candidate.id
+            order by votes
+        """).fetchall()
+        assert rows == [
+            ("Yolo", "Governor", "REP", "Bob Jones", 300),
+            ("Yolo", "Governor", "DEM", "Jane Smith", 500),
+        ]
+
+        # Lookup-table FTS must also be clean
+        assert conn.execute(
+            "select value from office_value_fts where office_value_fts match 'president'"
+        ).fetchall() == []
+        assert conn.execute(
+            "select value from office_value_fts where office_value_fts match 'governor'"
+        ).fetchall() == [("Governor",)]
+
+
+def test_default_append_not_affected_by_replace_fix():
+    """Without --replace-tables, repeated imports still append."""
+    runner = CliRunner()
+    with runner.isolated_filesystem():
+        open("test.csv", "w").write(CSV_V1)
+        result = runner.invoke(
+            cli.cli,
+            "test.csv test.db -c office -c party -c candidate".split(),
+        )
+        assert result.exit_code == 0
+
+        open("test.csv", "w").write(CSV_V2)
+        result = runner.invoke(
+            cli.cli,
+            "test.csv test.db -c office -c party -c candidate".split(),
+        )
+        assert result.exit_code == 0
+
+        conn = sqlite3.connect("test.db")
+        # Append: main table should have 4 rows total
+        assert conn.execute("select count(*) from test").fetchone()[0] == 4
+        # Lookup tables should have values from BOTH imports
+        offices = sorted(r[0] for r in conn.execute("select value from office").fetchall())
+        assert offices == ["Governor", "President"]
+
+
 def test_if_cog_needs_to_be_run():
     _stdout = sys.stdout
     sys.stdout = StringIO()

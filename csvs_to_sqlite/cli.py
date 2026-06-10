@@ -238,6 +238,19 @@ def cli(
             foreign_keys[bits[0]] = (bits[0], "value")
 
     # Now we have loaded the dataframes, we can refactor them
+    # When replacing, drop lookup tables (and their FTS indexes) so they
+    # get rebuilt from scratch and don't retain stale values.
+    if replace_tables and foreign_keys:
+        dropped_lookup_tables = set()
+        for _col, (fk_table, value_column) in foreign_keys.items():
+            if fk_table not in dropped_lookup_tables:
+                fts_name = "{}_{}_fts".format(fk_table, value_column)
+                if table_exists(conn, fts_name):
+                    drop_table(conn, fts_name)
+                if table_exists(conn, fk_table):
+                    drop_table(conn, fk_table)
+                dropped_lookup_tables.add(fk_table)
+
     created_tables = {}
     refactored = refactor_dataframes(
         conn, dataframes, foreign_keys, not no_fulltext_fks
@@ -279,6 +292,12 @@ def cli(
                     raise click.BadParameter(
                         'FTS column "{}" does not exist'.format(fts_column)
                     )
+
+        if replace_tables:
+            for table_name in created_tables:
+                fts_table_name = "{}_fts".format(table_name)
+                if table_exists(conn, fts_table_name):
+                    drop_table(conn, fts_table_name)
 
         generate_and_populate_fts(conn, created_tables.keys(), fts, foreign_keys)
 
