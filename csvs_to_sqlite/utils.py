@@ -506,7 +506,12 @@ def apply_dates_and_datetimes(df, date_cols, datetime_cols, datetime_formats):
     def parse_datetime(datestring, force_date=False):
         if pd.isnull(datestring):
             return datestring
-        dt = dateparser.parse(datestring, date_formats=datetime_formats)
+        try:
+            dt = dateparser.parse(str(datestring), date_formats=datetime_formats)
+        except (ValueError, OverflowError):
+            return None
+        if dt is None:
+            return None
         if force_date:
             return dt.date().isoformat()
         else:

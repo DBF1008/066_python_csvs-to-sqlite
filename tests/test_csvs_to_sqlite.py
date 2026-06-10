@@ -27,6 +27,11 @@ Second headline,04/30/2005,5:45 10 December 2009"""
 CSV_DATES_CUSTOM_FORMAT = """headline,date
 Custom format,03/02/01"""
 
+CSV_DATES_BAD_VALUES = """headline,date,datetime
+First headline,3rd May 2017,10pm on April 4 1938
+Bad row,not-a-date,also_not_a_datetime
+Second headline,04/30/2005,5:45 10 December 2009"""
+
 CSV_CUSTOM_PRIMARY_KEYS = """pk1,pk2,name
 one,one,11
 one,two,12
@@ -764,6 +769,24 @@ def test_just_strings_with_date_specified():
 
         for name, gross, dt in actual:
             assert isinstance(gross, text_type)
+
+
+def test_dates_with_bad_values():
+    runner = CliRunner()
+    with runner.isolated_filesystem():
+        open("test.csv", "w").write(CSV_DATES_BAD_VALUES)
+        result = runner.invoke(
+            cli.cli, ["test.csv", "test.db", "-d", "date", "-dt", "datetime"]
+        )
+        assert result.exit_code == 0
+        conn = sqlite3.connect("test.db")
+        expected = [
+            ("First headline", "2017-05-03", "1938-04-04T22:00:00"),
+            ("Bad row", None, None),
+            ("Second headline", "2005-04-30", "2009-12-10T05:45:00"),
+        ]
+        actual = conn.execute("select * from test").fetchall()
+        assert expected == actual
 
 
 def test_if_cog_needs_to_be_run():
