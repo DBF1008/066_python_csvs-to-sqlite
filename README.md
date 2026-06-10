@@ -180,6 +180,8 @@ Options:
   --just-strings                  Import all columns as text strings by default
                                   (and, if specified, still obey --shape,
                                   --date/datetime, and --datetime-format)
+  --summary [text|json]           Output an import summary in the specified
+                                  format (text or json)
   --version                       Show the version and exit.
   --help                          Show this message and exit.
 

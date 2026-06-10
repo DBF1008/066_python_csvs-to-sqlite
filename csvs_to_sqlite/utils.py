@@ -1,4 +1,5 @@
 import dateparser
+import json
 import os
 import fnmatch
 import hashlib
@@ -251,7 +252,7 @@ def refactor_dataframes(conn, dataframes, foreign_keys, index_fts):
                     )
                     lookup_tables[table_name] = lookup_table
                 dataframe[column] = dataframe[column].apply(lookup_table.id_for_value)
-    return dataframes
+    return dataframes, lookup_tables
 
 
 def table_exists(conn, table):
@@ -516,3 +517,89 @@ def apply_dates_and_datetimes(df, date_cols, datetime_cols, datetime_formats):
         df[date_col] = df[date_col].apply(lambda s: parse_datetime(s, force_date=True))
     for datetime_col in datetime_cols:
         df[datetime_col] = df[datetime_col].apply(parse_datetime)
+
+
+def build_summary(conn, dbname, created_tables, foreign_keys, lookup_tables, fts_columns):
+    tables = []
+    for table_name in created_tables:
+        row_count = conn.execute(
+            'SELECT COUNT(*) FROM [{}]'.format(table_name)
+        ).fetchone()[0]
+        columns = [
+            row[1] for row in conn.execute(
+                'PRAGMA table_info([{}])'.format(table_name)
+            )
+        ]
+        tables.append({
+            "table": table_name,
+            "rows": row_count,
+            "columns": columns,
+        })
+
+    extract_columns = []
+    for col, (lt_name, value_col) in foreign_keys.items():
+        lt = lookup_tables.get(lt_name)
+        unique_values = 0
+        if lt:
+            unique_values = conn.execute(
+                'SELECT COUNT(*) FROM [{}]'.format(lt_name)
+            ).fetchone()[0]
+        extract_columns.append({
+            "column": col,
+            "lookup_table": lt_name,
+            "value_column": value_col,
+            "unique_values": unique_values,
+        })
+
+    fts_tables = []
+    if fts_columns:
+        for table_name in created_tables:
+            fts_table_name = "{}_fts".format(table_name)
+            exists = conn.execute(
+                "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name=?",
+                (fts_table_name,),
+            ).fetchone()[0]
+            if exists:
+                fts_tables.append({
+                    "table": fts_table_name,
+                    "source_table": table_name,
+                    "columns": list(fts_columns),
+                })
+
+    return {
+        "database": dbname,
+        "tables": tables,
+        "extract_columns": extract_columns,
+        "fts_tables": fts_tables,
+    }
+
+
+def format_summary_text(data):
+    lines = ["", "--- Import Summary ---", "Database: {}".format(data["database"])]
+
+    if data["tables"]:
+        lines.append("")
+        lines.append("Tables:")
+        for t in data["tables"]:
+            cols = ", ".join(t["columns"])
+            lines.append("  {:<24} {:>6} rows ({})".format(
+                t["table"], t["rows"], cols
+            ))
+
+    if data["extract_columns"]:
+        lines.append("")
+        lines.append("Extract columns (lookup tables):")
+        for ec in data["extract_columns"]:
+            lines.append("  {:<12} -> {}.{:<16} ({} unique values)".format(
+                ec["column"], ec["lookup_table"], ec["value_column"],
+                ec["unique_values"],
+            ))
+
+    if data["fts_tables"]:
+        lines.append("")
+        lines.append("Full-text search indexes:")
+        for ft in data["fts_tables"]:
+            cols = ", ".join(ft["columns"])
+            lines.append("  {:<24} (columns: {})".format(ft["table"], cols))
+
+    return "\n".join(lines)

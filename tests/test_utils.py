@@ -40,7 +40,7 @@ def test_refactor_dataframes():
         ]
     )
     conn = sqlite3.connect(":memory:")
-    output = utils.refactor_dataframes(
+    output, lookup_tables = utils.refactor_dataframes(
         conn, [df], {"name": ("People", "first_name")}, False
     )
     assert 1 == len(output)

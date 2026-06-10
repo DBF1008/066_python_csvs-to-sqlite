@@ -1,5 +1,7 @@
 from __future__ import absolute_import
 
+import json
+
 import click
 from .utils import (
     LoadCsvError,
@@ -9,7 +11,9 @@ from .utils import (
     apply_dates_and_datetimes,
     apply_shape,
     best_fts_version,
+    build_summary,
     csvs_from_paths,
+    format_summary_text,
     generate_and_populate_fts,
     load_csv,
     refactor_dataframes,
@@ -145,6 +149,12 @@ import sqlite3
     is_flag=True,
     help="Import all columns as text strings by default (and, if specified, still obey --shape, --date/datetime, and --datetime-format)",
 )
+@click.option(
+    "--summary",
+    type=click.Choice(["text", "json"]),
+    default=None,
+    help="Output an import summary in the specified format (text or json)",
+)
 @click.version_option()
 def cli(
     paths,
@@ -169,6 +179,7 @@ def cli(
     no_index_fks,
     no_fulltext_fks,
     just_strings,
+    summary,
 ):
     """
     PATHS: paths to individual .csv files or to directories containing .csvs
@@ -239,7 +250,7 @@ def cli(
 
     # Now we have loaded the dataframes, we can refactor them
     created_tables = {}
-    refactored = refactor_dataframes(
+    refactored, lookup_tables = refactor_dataframes(
         conn, dataframes, foreign_keys, not no_fulltext_fks
     )
     for df in refactored:
@@ -281,6 +292,15 @@ def cli(
                     )
 
         generate_and_populate_fts(conn, created_tables.keys(), fts, foreign_keys)
+
+    if summary:
+        summary_data = build_summary(
+            conn, dbname, created_tables, foreign_keys, lookup_tables, fts
+        )
+        if summary == "text":
+            click.echo(format_summary_text(summary_data))
+        else:
+            click.echo(json.dumps(summary_data, indent=2))
 
     conn.close()
 

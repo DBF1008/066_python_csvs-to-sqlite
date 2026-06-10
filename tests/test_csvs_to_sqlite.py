@@ -2,6 +2,7 @@ from click.testing import CliRunner
 from csvs_to_sqlite import cli
 from six import string_types, text_type
 from cogapp import Cog
+import json
 import sys
 from io import StringIO
 import pathlib
@@ -764,6 +765,158 @@ def test_just_strings_with_date_specified():
 
         for name, gross, dt in actual:
             assert isinstance(gross, text_type)
+
+
+def test_no_summary_output_unchanged():
+    runner = CliRunner()
+    with runner.isolated_filesystem():
+        open("test.csv", "w").write(CSV)
+        result = runner.invoke(cli.cli, ["test.csv", "test.db"])
+        assert result.exit_code == 0
+        assert "Import Summary" not in result.output
+        assert result.output.strip().endswith("Created test.db from 1 CSV file")
+
+
+def test_summary_text_single_file():
+    runner = CliRunner()
+    with runner.isolated_filesystem():
+        open("test.csv", "w").write(CSV)
+        result = runner.invoke(cli.cli, ["test.csv", "test.db", "--summary", "text"])
+        assert result.exit_code == 0
+        assert "--- Import Summary ---" in result.output
+        assert "Database: test.db" in result.output
+        assert "test" in result.output
+        assert "6 rows" in result.output
+        assert "county" in result.output
+        assert "Created test.db from 1 CSV file" in result.output
+
+
+def test_summary_json_single_file():
+    runner = CliRunner()
+    with runner.isolated_filesystem():
+        open("test.csv", "w").write(CSV)
+        result = runner.invoke(cli.cli, ["test.csv", "test.db", "--summary", "json"])
+        assert result.exit_code == 0
+        lines = result.output.strip().split("\n")
+        json_start = None
+        for i, line in enumerate(lines):
+            if line.strip().startswith("{"):
+                json_start = i
+                break
+        assert json_start is not None
+        json_text = "\n".join(lines[json_start:lines.index("Created test.db from 1 CSV file")])
+        data = json.loads(json_text)
+        assert data["database"] == "test.db"
+        assert len(data["tables"]) == 1
+        assert data["tables"][0]["table"] == "test"
+        assert data["tables"][0]["rows"] == 6
+        assert "county" in data["tables"][0]["columns"]
+        assert data["extract_columns"] == []
+        assert data["fts_tables"] == []
+
+
+def test_summary_text_directory():
+    runner = CliRunner()
+    with runner.isolated_filesystem():
+        open("test1.csv", "w").write(CSV)
+        open("test2.csv", "w").write(CSV_MULTI)
+        result = runner.invoke(cli.cli, [".", "multi.db", "--summary", "text"])
+        assert result.exit_code == 0
+        assert "--- Import Summary ---" in result.output
+        assert "6 rows" in result.output
+        assert "3 rows" in result.output
+
+
+def test_summary_json_with_extract_columns():
+    runner = CliRunner()
+    with runner.isolated_filesystem():
+        open("test.csv", "w").write(CSV)
+        result = runner.invoke(
+            cli.cli,
+            "test.csv extracted.db -c office -c party --summary json".split(),
+        )
+        assert result.exit_code == 0
+        lines = result.output.strip().split("\n")
+        json_start = None
+        for i, line in enumerate(lines):
+            if line.strip().startswith("{"):
+                json_start = i
+                break
+        assert json_start is not None
+        json_end = None
+        for i in range(len(lines) - 1, json_start - 1, -1):
+            if lines[i].strip() == "}":
+                json_end = i
+                break
+        json_text = "\n".join(lines[json_start:json_end + 1])
+        data = json.loads(json_text)
+        assert len(data["extract_columns"]) == 2
+        col_names = {ec["column"] for ec in data["extract_columns"]}
+        assert col_names == {"office", "party"}
+        for ec in data["extract_columns"]:
+            assert ec["unique_values"] > 0
+            assert ec["value_column"] == "value"
+
+
+def test_summary_json_with_fts():
+    runner = CliRunner()
+    with runner.isolated_filesystem():
+        open("test.csv", "w").write(CSV)
+        result = runner.invoke(
+            cli.cli,
+            "test.csv fts.db -f office -f candidate --summary json".split(),
+        )
+        assert result.exit_code == 0
+        lines = result.output.strip().split("\n")
+        json_start = None
+        for i, line in enumerate(lines):
+            if line.strip().startswith("{"):
+                json_start = i
+                break
+        assert json_start is not None
+        json_end = None
+        for i in range(len(lines) - 1, json_start - 1, -1):
+            if lines[i].strip() == "}":
+                json_end = i
+                break
+        json_text = "\n".join(lines[json_start:json_end + 1])
+        data = json.loads(json_text)
+        assert len(data["fts_tables"]) == 1
+        assert data["fts_tables"][0]["table"] == "test_fts"
+        assert data["fts_tables"][0]["source_table"] == "test"
+        assert set(data["fts_tables"][0]["columns"]) == {"office", "candidate"}
+
+
+def test_summary_json_with_extract_and_fts():
+    runner = CliRunner()
+    with runner.isolated_filesystem():
+        open("test.csv", "w").write(CSV)
+        result = runner.invoke(
+            cli.cli,
+            (
+                "test.csv combo.db -c office -c party -c candidate "
+                "-f party -f candidate --summary json"
+            ).split(),
+        )
+        assert result.exit_code == 0
+        lines = result.output.strip().split("\n")
+        json_start = None
+        for i, line in enumerate(lines):
+            if line.strip().startswith("{"):
+                json_start = i
+                break
+        json_end = None
+        for i in range(len(lines) - 1, json_start - 1, -1):
+            if lines[i].strip() == "}":
+                json_end = i
+                break
+        json_text = "\n".join(lines[json_start:json_end + 1])
+        data = json.loads(json_text)
+        assert len(data["tables"]) == 1
+        assert data["tables"][0]["rows"] == 6
+        assert len(data["extract_columns"]) == 3
+        assert len(data["fts_tables"]) == 1
+        assert set(data["fts_tables"][0]["columns"]) == {"party", "candidate"}
 
 
 def test_if_cog_needs_to_be_run():
